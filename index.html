@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>📷 بث كاميرا الحاضنة</title>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  window._FB = { initializeApp, getDatabase, ref, set, onValue, push };
+</script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background: #0d0d1a;
+  color: #e2e2e2;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+}
+.logo { font-size: 2em; margin: 20px 0 6px; }
+h1 { font-size: 1.1em; color: #818cf8; margin-bottom: 2px; }
+.subtitle { font-size: 0.75em; color: #555; margin-bottom: 20px; }
+
+.video-wrap {
+  width: 100%; max-width: 440px;
+  background: #000;
+  border-radius: 14px;
+  overflow: hidden;
+  aspect-ratio: 4/3;
+  position: relative;
+  border: 2px solid #1e1e3f;
+  margin-bottom: 14px;
+}
+video { width:100%; height:100%; object-fit:cover; display:block; transform:scaleX(-1); }
+.video-placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: #333; gap: 8px;
+}
+.video-placeholder span { font-size: 3em; }
+.video-placeholder p { font-size: 0.8em; }
+
+.live-badge {
+  position: absolute; top: 10px; right: 10px;
+  background: #ef4444; color: white;
+  font-size: 0.72em; font-weight: 700;
+  padding: 3px 10px; border-radius: 20px;
+  display: none; align-items: center; gap: 5px;
+}
+.live-badge.show { display: flex; }
+.live-dot { width:7px; height:7px; border-radius:50%; background:white; animation: blink 1s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+.status-bar {
+  width:100%; max-width:440px;
+  background: #13132a;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-size: 0.82em;
+}
+.status-left { display:flex; align-items:center; gap:8px; }
+.indicator { width:9px; height:9px; border-radius:50%; background:#444; transition:all 0.3s; }
+.indicator.green  { background:#10b981; box-shadow:0 0 8px #10b981; }
+.indicator.yellow { background:#f59e0b; animation:blink 0.8s infinite; }
+.indicator.red    { background:#ef4444; }
+
+.controls { width:100%; max-width:440px; display:flex; flex-direction:column; gap:10px; }
+.btn {
+  width: 100%; padding: 15px; border: none; border-radius: 12px;
+  font-size: 1em; font-weight: 700; cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-primary { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; }
+.btn-danger  { background: #1a1a2e; color: #ef4444; border: 1.5px solid #ef4444; }
+.btn-flip    { background: #1a1a2e; color: #818cf8; border: 1.5px solid #2a2a5a; font-size: 0.9em; padding: 12px; }
+
+.section {
+  width:100%; max-width:440px;
+  background: #13132a; border-radius: 12px; padding: 14px; margin-top: 10px;
+}
+.section-title { font-size: 0.78em; color: #555; margin-bottom: 10px; font-weight: 600; }
+label { font-size: 0.78em; color: #666; display:block; margin-bottom:4px; margin-top:8px; }
+input {
+  width:100%; background: #0d0d1a; border: 1px solid #2a2a4a; border-radius: 8px;
+  color: #e0e0e0; padding: 10px 12px; font-size: 0.85em; outline: none; transition: border-color 0.2s;
+}
+input:focus { border-color: #4f46e5; }
+
+.quality-row { display:flex; gap:6px; margin-top:8px; }
+.q-opt {
+  flex:1; padding:8px 4px; text-align:center;
+  border-radius:8px; border:1.5px solid #2a2a4a;
+  background:#0d0d1a; color:#555; font-size:0.78em; cursor:pointer; transition:all 0.2s;
+}
+.q-opt.active { border-color:#4f46e5; color:#818cf8; background:#1a1a3a; }
+
+.tip {
+  background: #0d1a0d; border: 1px solid #1a3a1a; border-radius: 8px;
+  padding: 10px 12px; font-size: 0.75em; color: #4a8a4a; line-height: 1.8; margin-top: 10px;
+}
+</style>
+</head>
+<body>
+
+<div class="logo">📷</div>
+<h1>كاميرا الحاضنة الذكية</h1>
+<p class="subtitle">افتح هذه الصفحة على الهاتف — الواجهة تستقبل البث تلقائياً</p>
+
+<div class="video-wrap">
+  <div class="video-placeholder" id="placeholder">
+    <span>📵</span>
+    <p>اضغط "بدء البث" لتشغيل الكاميرا</p>
+  </div>
+  <video id="myVideo" autoplay playsinline muted></video>
+  <div class="live-badge" id="liveBadge">
+    <span class="live-dot"></span> LIVE
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="status-left">
+    <div class="indicator" id="indicator"></div>
+    <span id="statusMsg">جاهز للبث</span>
+  </div>
+  <span id="viewerBadge" style="font-size:0.8em;color:#555;">👁 0 مشاهد</span>
+</div>
+
+<div class="controls">
+  <button class="btn btn-primary" id="btnStart" onclick="startBroadcast()">▶ بدء البث</button>
+  <button class="btn btn-danger"  id="btnStop"  onclick="stopBroadcast()" disabled>⏹ إيقاف البث</button>
+  <button class="btn btn-flip"    onclick="flipCamera()">🔄 تبديل الكاميرا (أمامية / خلفية)</button>
+</div>
+
+<div class="section">
+  <div class="section-title">⚙️ إعدادات الاتصال</div>
+  <label>🔥 رابط Firebase (نفس الرابط في الواجهة الرئيسية)</label>
+  <input type="url" id="fbUrl" placeholder="https://YOUR-PROJECT-default-rtdb.firebaseio.com">
+  <label>🔑 معرّف الغرفة (نفس الرقم في الواجهة الرئيسية)</label>
+  <input type="text" id="roomId" value="room-incubator-1">
+  <label>📐 جودة الفيديو</label>
+  <div class="quality-row">
+    <div class="q-opt"        onclick="pickQ(this,320,240)">240p</div>
+    <div class="q-opt active" onclick="pickQ(this,640,480)">480p</div>
+    <div class="q-opt"        onclick="pickQ(this,1280,720)">720p</div>
+  </div>
+  <div class="tip">
+    💡 <strong>تعليمات الاستخدام:</strong><br>
+    1. أدخل رابط Firebase ومعرّف الغرفة<br>
+    2. اضغط "بدء البث" واسمح بالوصول للكاميرا<br>
+    3. افتح الواجهة الرئيسية → تبويب التحكم → قسم الكاميرا<br>
+    4. أدخل نفس معرّف الغرفة واضغط "اتصال"<br>
+    5. يعمل خارج الشبكة المنزلية تلقائياً ✅
+  </div>
+</div>
+
+<script type="module">
+const { initializeApp, getDatabase, ref, set, onValue, push } = window._FB;
+
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: ['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:stun2.l.google.com:19302'] },
+    { urls:'turn:openrelay.metered.ca:80',    username:'openrelayproject', credential:'openrelayproject' },
+    { urls:'turn:openrelay.metered.ca:443',   username:'openrelayproject', credential:'openrelayproject' },
+    { urls:'turn:openrelay.metered.ca:443?transport=tcp', username:'openrelayproject', credential:'openrelayproject' }
+  ]
+};
+
+let db = null, roomId = '';
+let localStream = null;
+let peers = {};
+let facing = 'environment';
+let quality = { w:640, h:480 };
+let isBroadcasting = false;
+
+function setStatus(msg, color) {
+  document.getElementById('statusMsg').textContent = msg;
+  document.getElementById('indicator').className = 'indicator ' + (color||'');
+}
+function setViewers(n) { document.getElementById('viewerBadge').textContent = `👁 ${n} مشاهد`; }
+
+window.pickQ = (el, w, h) => {
+  document.querySelectorAll('.q-opt').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  quality = { w, h };
+};
+
+async function getStream() {
+  if (localStream) localStream.getTracks().forEach(t => t.stop());
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode:{ideal:facing}, width:{ideal:quality.w}, height:{ideal:quality.h}, frameRate:{ideal:25} },
+    audio: false
+  });
+  document.getElementById('myVideo').srcObject = localStream;
+  document.getElementById('placeholder').style.display = 'none';
+}
+
+window.flipCamera = async () => {
+  facing = facing === 'environment' ? 'user' : 'environment';
+  if (localStream) {
+    await getStream();
+    const newTrack = localStream.getVideoTracks()[0];
+    for (const pc of Object.values(peers)) {
+      const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+      if (sender) sender.replaceTrack(newTrack).catch(()=>{});
+    }
+  }
+};
+
+function initDB() {
+  const url = document.getElementById('fbUrl').value.trim();
+  roomId    = document.getElementById('roomId').value.trim() || 'room-incubator-1';
+  if (!url) { alert('الرجاء إدخال رابط Firebase'); return false; }
+  try {
+    const app = initializeApp({ databaseURL: url }, 'cam-' + Date.now());
+    db = getDatabase(app);
+    return true;
+  } catch(e) { alert('خطأ: ' + e.message); return false; }
+}
+
+window.startBroadcast = async () => {
+  if (!initDB()) return;
+  document.getElementById('btnStart').disabled = true;
+  setStatus('جاري تشغيل الكاميرا...', 'yellow');
+  try {
+    await getStream();
+    isBroadcasting = true;
+
+    // إعلان البث في Firebase
+    await set(ref(db, `rooms/${roomId}/broadcast`), {
+      active: true, startedAt: Date.now(), quality: `${quality.w}x${quality.h}`
+    });
+
+    // الاستماع لطلبات المشاهدين
+    onValue(ref(db, `rooms/${roomId}/offers`), async snap => {
+      const offers = snap.val();
+      if (!offers) return;
+      for (const [vid, data] of Object.entries(offers)) {
+        if (!peers[vid] && data.sdp) await connectViewer(vid, data);
+      }
+    });
+
+    setStatus('يبث الآن ✦', 'green');
+    document.getElementById('liveBadge').classList.add('show');
+    document.getElementById('btnStop').disabled = false;
+  } catch(err) {
+    setStatus('خطأ: ' + err.message, 'red');
+    document.getElementById('btnStart').disabled = false;
+  }
+};
+
+async function connectViewer(vid, offerData) {
+  const pc = new RTCPeerConnection(RTC_CONFIG);
+  peers[vid] = pc;
+
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+  pc.onicecandidate = async ({ candidate }) => {
+    if (candidate) {
+      const r = push(ref(db, `rooms/${roomId}/bcandidates/${vid}`));
+      await set(r, candidate.toJSON());
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    const active = Object.values(peers).filter(p => p.connectionState === 'connected').length;
+    setViewers(active);
+    if (['disconnected','failed','closed'].includes(pc.connectionState)) {
+      pc.close(); delete peers[vid];
+      setViewers(Object.keys(peers).length);
+    }
+  };
+
+  await pc.setRemoteDescription({ type:'offer', sdp: offerData.sdp });
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  await set(ref(db, `rooms/${roomId}/answers/${vid}`), { sdp: answer.sdp });
+
+  onValue(ref(db, `rooms/${roomId}/vcandidates/${vid}`), snap => {
+    snap.forEach(child => {
+      const c = child.val();
+      if (c && pc.remoteDescription)
+        pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
+    });
+  });
+}
+
+window.stopBroadcast = async () => {
+  isBroadcasting = false;
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  Object.values(peers).forEach(pc => pc.close());
+  peers = {};
+  if (db) await set(ref(db, `rooms/${roomId}/broadcast`), { active: false });
+  document.getElementById('myVideo').srcObject = null;
+  document.getElementById('placeholder').style.display = 'flex';
+  document.getElementById('liveBadge').classList.remove('show');
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled  = true;
+  setStatus('تم إيقاف البث', 'red');
+  setViewers(0);
+};
+
+window.addEventListener('beforeunload', () => { if(isBroadcasting) window.stopBroadcast(); });
+</script>
+</body>
+</html>
